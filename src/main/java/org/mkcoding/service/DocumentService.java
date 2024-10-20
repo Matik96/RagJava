@@ -24,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @Slf4j
@@ -70,20 +71,19 @@ public class DocumentService {
     public String chatWithDocument(Long documentId, String question) {
 
         // Validate inputs
-        if (documentId == null || documentId <= 0) {
-            throw new IllegalArgumentException("Document ID must be a positive non-null value.");
-        }
-        if (question == null || question.isBlank()) {
-            throw new IllegalArgumentException("Question must not be null or blank.");
-        }
+        validateInputs(documentId, question);
+
         log.info("Starting chatWithDocument for documentId: {}, question: '{}'", documentId, question);
 
         // Retrieve the embedding store for the given document ID
-        Document document = documentRepository.findById(documentId).get();
-        if (document == null || document.getId() == null || document.getDocumentEmbeddingStore() == null)
-            throw new DocumentNotFoundException("Document not found with ID: " + documentId);
+        Document document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException("Document not found with ID: " + documentId));
+
+        // Validate the retrieved document's content
+        validateDocumentContent(document, documentId);
 
         EmbeddingStore<TextSegment> documentEmbeddingStore = document.getDocumentEmbeddingStore();
+
         // Retrieve relevant segments based on the question
         List<Content> relevantSegments = contentRetriever.retrieveRelevantContents(question, documentEmbeddingStore);
 
@@ -96,6 +96,21 @@ public class DocumentService {
         log.info("Completed chatWithDocument for documentId: {}", documentId);
 
         return answer;
+    }
+
+    private void validateInputs(Long documentId, String question) {
+        if (documentId == null || documentId <= 0) {
+            throw new IllegalArgumentException("Document ID must be a positive non-null value.");
+        }
+        if (question == null || question.isBlank()) {
+            throw new IllegalArgumentException("Question must not be null or blank.");
+        }
+    }
+
+    private void validateDocumentContent(Document document, Long documentId) {
+        if (document.getId() == null || document.getDocumentEmbeddingStore() == null) {
+            throw new DocumentNotFoundException("Document with ID: " + documentId + " has invalid or missing data.");
+        }
     }
 
     private DocumentParser selectDocumentParser(MultipartFile file) throws UnsupportedMediaTypeException {

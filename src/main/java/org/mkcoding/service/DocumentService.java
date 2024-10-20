@@ -79,8 +79,9 @@ public class DocumentService {
         log.info("Starting chatWithDocument for documentId: {}, question: '{}'", documentId, question);
 
         // Retrieve the embedding store for the given document ID
-        Document document = documentRepository.findById(documentId)
-                .orElseThrow(() -> new DocumentNotFoundException("Document not found with ID: " + documentId));
+        Document document = documentRepository.findById(documentId).get();
+        if (document == null || document.getId() == null || document.getDocumentEmbeddingStore() == null)
+            throw new DocumentNotFoundException("Document not found with ID: " + documentId);
 
         EmbeddingStore<TextSegment> documentEmbeddingStore = document.getDocumentEmbeddingStore();
         // Retrieve relevant segments based on the question

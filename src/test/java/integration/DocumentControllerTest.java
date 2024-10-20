@@ -1,9 +1,9 @@
 package integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
-import org.mkcoding.dto.ChatRequestDto;
 import org.mkcoding.run.Main;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -17,9 +17,10 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 
 import static org.hamcrest.Matchers.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @AutoConfigureMockMvc
 @SpringBootTest(classes = Main.class)
@@ -43,16 +44,18 @@ class DocumentControllerTest {
                 .andExpect(jsonPath("$.documentId").exists())
                 .andExpect(jsonPath("$.status", is("Success")));
     }
+
     @Test
     void testUploadDocument_notText() throws Exception {
         // Create a text file for upload
-        MockMultipartFile file = new MockMultipartFile("file", "test.pgn", "text/plain", "Test content".getBytes());
+        MockMultipartFile file = new MockMultipartFile("file", "test.pgn", "image/jpeg", "Test content".getBytes());
 
         // Perform the upload request without mocking
         mockMvc.perform(multipart("/upload")
-                        .file(null))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.status", is("Success")));
+                        .file(file))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(jsonPath("$.message", is("Unsupported file type: image/jpeg")))
+                .andExpect(jsonPath("$.status", is(415)));
     }
 
     @Test
@@ -70,12 +73,14 @@ class DocumentControllerTest {
         String uploadResponse = uploadResult.getResponse().getContentAsString();
         Long documentId = JsonPath.parse(uploadResponse).read("$.documentId", Long.class);
 
-        // Prepare the chat request
+        // Prepare the chat request using ObjectMapper
         String question = "What is the content?";
-        ChatRequestDto requestDto = new ChatRequestDto(documentId, question);
-        String jsonRequest = objectMapper.writeValueAsString(requestDto);
+        ObjectNode requestJson = objectMapper.createObjectNode();
+        requestJson.put("documentId", documentId);
+        requestJson.put("question", question);
+        String jsonRequest = objectMapper.writeValueAsString(requestJson);
 
-        // Perform the chat request without mocking
+        // Perform the chat request
         mockMvc.perform(post("/chat")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(jsonRequest))
@@ -89,9 +94,11 @@ class DocumentControllerTest {
         Long documentId = 9999L;
         String question = "What is the content?";
 
-        // Prepare the chat request
-        ChatRequestDto requestDto = new ChatRequestDto(documentId, question);
-        String jsonRequest = objectMapper.writeValueAsString(requestDto);
+        // Prepare the chat request using ObjectMapper
+        ObjectNode requestJson = objectMapper.createObjectNode();
+        requestJson.put("documentId", documentId);
+        requestJson.put("question", question);
+        String jsonRequest = objectMapper.writeValueAsString(requestJson);
 
         // Perform the chat request expecting a 404 Not Found
         mockMvc.perform(post("/chat")
@@ -104,21 +111,24 @@ class DocumentControllerTest {
     @Test
     void testChatWithDocument_InvalidRequest() throws Exception {
         // Prepare an invalid chat request with null fields
-        ChatRequestDto requestDto = new ChatRequestDto(null, null);
-        String jsonRequest = objectMapper.writeValueAsString(requestDto);
+        ObjectNode requestJson = objectMapper.createObjectNode();
+        requestJson.putNull("documentId");
+        requestJson.putNull("question");
+        String jsonRequest = objectMapper.writeValueAsString(requestJson);
 
         // Perform the chat request expecting a 400 Bad Request
         mockMvc.perform(post("/chat")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(jsonRequest))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.errors", hasSize(greaterThan(0))));
+                .andExpect(jsonPath("$.message", notNullValue()))
+                .andExpect(jsonPath("$.status", is(400)));
     }
 
     @Test
     void testUploadDocument_PdfFile() throws Exception {
         // Read a small PDF file from the test resources
-        byte[] pdfContent = Files.readAllBytes(Paths.get("src/test/resources/test.pdf"));
+        byte[] pdfContent = Files.readAllBytes(Paths.get("src/test/resources/zajac.pdf"));
         MockMultipartFile file = new MockMultipartFile("file", "test.pdf", "application/pdf", pdfContent);
 
         // Perform the upload request with the PDF file
@@ -126,7 +136,7 @@ class DocumentControllerTest {
                         .file(file))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.documentId").exists())
-                .andExpect(jsonPath("$.message", is("Success")));
+                .andExpect(jsonPath("$.status", is("Success")));
     }
 
     @Test
@@ -138,6 +148,6 @@ class DocumentControllerTest {
         mockMvc.perform(multipart("/upload")
                         .file(file))
                 .andExpect(status().isUnsupportedMediaType())
-                .andExpect(jsonPath("$.message", containsString("Unsupported media type")));
+                .andExpect(jsonPath("$.message", containsString("Unsupported file type: application/xyz")));
     }
 }

@@ -23,6 +23,7 @@ import java.time.LocalDateTime;
 public class GlobalExceptionHandler {
 
     @ExceptionHandler(DocumentNotFoundException.class)
+    @ResponseBody
     public ResponseEntity<ErrorResponse> handleDocumentNotFoundException(DocumentNotFoundException ex) {
         log.error("Document not found: {}", ex.getMessage());
         ErrorResponse error = ErrorResponse.builder()
